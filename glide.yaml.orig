@@ -1,0 +1,12 @@
+package: github.com/rrati/webhook-server
+import:
+- package: github.com/golang/glog
+- package: k8s.io/client-go
+  version: master
+  repo: git@github.com:kubernetes/client-go.git
+  subpackages:
+  - kubernetes
+  - pkg/api/v1
+  - pkg/apis/admissionregistration/v1alpha1
+  - rest
+- package: k8s.io/api
