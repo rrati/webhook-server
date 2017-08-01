@@ -1,5 +1,5 @@
-hash: 0a817a9b8ffd47141ee6a4371a6e557c4b963b177125fee56e639fb795457cfa
-updated: 2017-07-30T11:14:33.172282085-04:00
+hash: 541add1ebd66dc5cf24250cb74c611e957cbac02161b59523f536f81792b08e9
+updated: 2017-08-01T16:56:25.477604897-04:00
 imports:
 - name: github.com/davecgh/go-spew
   version: adab96458c51a58dc1783b3335dcce5461522e75
@@ -161,7 +161,7 @@ imports:
   - pkg/apis/apiserver/v1alpha1
   - pkg/authentication/user
 - name: k8s.io/client-go
-  version: c7ed6bc9c1c981e0f0bd09dc046c9b81ab855c24
+  version: 45673e060eb921b510677b1123737ad1158e49fa
   repo: git@github.com:kubernetes/client-go.git
   subpackages:
   - discovery
