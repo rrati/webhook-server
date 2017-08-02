@@ -22,7 +22,7 @@ type AdmissionPluginWebServerConfig struct {
 	ServerPort     int
 	ServerCertFile string
 	ServerKeyFile  string
-	kubeClient     *kubernetes.Clientset
+	KubeClient     *kubernetes.Clientset
 }
 
 // AdmissionPluginWebServer wraps and serves a provided admission plugin as a Webhook
@@ -71,7 +71,7 @@ func (apws *AdmissionPluginWebServer) configTLS() {
 }
 
 func (apws *AdmissionPluginWebServer) getAPIServerCert() []byte {
-	cm, err := apws.kubeClient.CoreV1().ConfigMaps("kube-system").Get("extension-apiserver-authentication", metav1.GetOptions{})
+	cm, err := apws.KubeClient.CoreV1().ConfigMaps("kube-system").Get("extension-apiserver-authentication", metav1.GetOptions{})
 	if err != nil {
 		glog.Fatalf("failed to get apiserver certificate: %v", err)
 	}

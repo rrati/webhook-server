@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	"k8s.io/api/admission/v1alpha1"
 
@@ -18,15 +19,17 @@ import (
 // AdmissionPluginHandler is a handler for wrapping an admission plugin
 type AdmissionPluginHandler struct {
 	AdmissionPlugin admission.Interface
-	Decoder         func([]byte) (runtime.Object, error)
+	Decoder         runtime.Decoder
 }
 
 // NewAdmissionPluginHandler returns a new handler that wraps an admission plugin
-func NewAdmissionPluginHandler(plugin admission.Interface, decoder func([]byte) (runtime.Object, error)) http.Handler {
+func NewAdmissionPluginHandler(plugin admission.Interface, decoder runtime.Decoder) http.Handler {
 	return &AdmissionPluginHandler{AdmissionPlugin: plugin, Decoder: decoder}
 }
 
 func (aph *AdmissionPluginHandler) createAdmissionRecord(ar v1alpha1.AdmissionReviewSpec) (admission.Attributes, error) {
+	var oldObj runtime.Object
+
 	kind := schema.GroupVersionKind{
 		Group:   ar.Kind.Group,
 		Kind:    ar.Kind.Kind,
@@ -48,13 +51,16 @@ func (aph *AdmissionPluginHandler) createAdmissionRecord(ar v1alpha1.AdmissionRe
 		userInfo.Extra[key] = val
 	}
 
-	obj, err := aph.Decoder(ar.Object.Raw)
+	obj, _, err := aph.Decoder.Decode(ar.Object.Raw, &kind, nil)
 	if err != nil {
 		return nil, err
 	}
-	oldObj, err := aph.Decoder(ar.OldObject.Raw)
-	if err != nil {
-		return nil, err
+
+	if len(ar.OldObject.Raw) > 0 {
+		oldObj, _, err = aph.Decoder.Decode(ar.OldObject.Raw, &kind, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	attrs := admission.NewAttributesRecord(obj, oldObj, kind, ar.Namespace, ar.Name, resource, ar.SubResource, ar.Operation, &userInfo)
@@ -64,25 +70,31 @@ func (aph *AdmissionPluginHandler) createAdmissionRecord(ar v1alpha1.AdmissionRe
 // ServeHTTP handles HTTP requests from a web server
 func (aph *AdmissionPluginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ar := v1alpha1.AdmissionReview{}
-	allowed := true
+	allowed := false
 
 	if err := json.NewDecoder(r.Body).Decode(ar); err != nil {
 		aph.sendResponse(w, ar, allowed, err)
 		return
 	}
 
-	if ar.Kind != "AdmissionReview" {
-		aph.sendResponse(w, ar, allowed, fmt.Errorf("unknown kind %q %q", ar.Kind))
+	if ar.Kind != "AdmissionReview" || ar.APIVersion != "admissionregistration.k8s.io/v1alpha1" {
+		aph.sendResponse(w, ar, allowed, fmt.Errorf("unknown kind/version %q %q", ar.Kind, ar.APIVersion))
 		return
 	}
 
 	admission, err := aph.createAdmissionRecord(ar.Spec)
+	origObj := admission.GetObject().DeepCopyObject()
 	if err != nil {
 		aph.sendResponse(w, ar, allowed, fmt.Errorf("failed to convert to admission record: %v", err))
+		return
 	}
 	err = aph.AdmissionPlugin.Admit(admission)
-	if err != nil {
-		allowed = false
+	if !reflect.DeepEqual(origObj, admission.GetObject()) {
+		aph.sendResponse(w, ar, allowed, fmt.Errorf("admission plugin wants to mutate the object, but mutation is not supported"))
+		return
+	}
+	if err == nil {
+		allowed = true
 	}
 
 	// TODO: encode mutated objects
