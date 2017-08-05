@@ -1,6 +1,7 @@
 package admissionwebhook
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,7 +57,10 @@ func (aph *AdmissionPluginHandler) createAdmissionRecord(ar v1alpha1.AdmissionRe
 		return nil, err
 	}
 
-	if len(ar.OldObject.Raw) > 0 {
+	// Until an unmarshalling bug is fixed, need to do a different comparision
+	// See: https://github.com/kubernetes/kubernetes/pull/50329
+	//	if len(ar.OldObject.Raw) > 0 {
+	if !bytes.Equal(ar.OldObject.Raw, []byte("null")) {
 		oldObj, _, err = aph.Decoder.Decode(ar.OldObject.Raw, &kind, nil)
 		if err != nil {
 			return nil, err
@@ -69,7 +73,7 @@ func (aph *AdmissionPluginHandler) createAdmissionRecord(ar v1alpha1.AdmissionRe
 
 // ServeHTTP handles HTTP requests from a web server
 func (aph *AdmissionPluginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ar := v1alpha1.AdmissionReview{}
+	ar := &v1alpha1.AdmissionReview{}
 	allowed := false
 
 	if err := json.NewDecoder(r.Body).Decode(ar); err != nil {
@@ -78,16 +82,16 @@ func (aph *AdmissionPluginHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	}
 
 	if ar.Kind != "AdmissionReview" || ar.APIVersion != "admissionregistration.k8s.io/v1alpha1" {
-		aph.sendResponse(w, ar, allowed, fmt.Errorf("unknown kind/version %q %q", ar.Kind, ar.APIVersion))
+		aph.sendResponse(w, ar, allowed, fmt.Errorf("unknown kind/version %q/%q", ar.Kind, ar.APIVersion))
 		return
 	}
 
 	admission, err := aph.createAdmissionRecord(ar.Spec)
-	origObj := admission.GetObject().DeepCopyObject()
 	if err != nil {
 		aph.sendResponse(w, ar, allowed, fmt.Errorf("failed to convert to admission record: %v", err))
 		return
 	}
+	origObj := admission.GetObject().DeepCopyObject()
 	err = aph.AdmissionPlugin.Admit(admission)
 	if !reflect.DeepEqual(origObj, admission.GetObject()) {
 		aph.sendResponse(w, ar, allowed, fmt.Errorf("admission plugin wants to mutate the object, but mutation is not supported"))
@@ -102,7 +106,7 @@ func (aph *AdmissionPluginHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	aph.sendResponse(w, ar, allowed, err)
 }
 
-func (aph *AdmissionPluginHandler) sendResponse(w http.ResponseWriter, ar v1alpha1.AdmissionReview, allowed bool, err error) {
+func (aph *AdmissionPluginHandler) sendResponse(w http.ResponseWriter, ar *v1alpha1.AdmissionReview, allowed bool, err error) {
 	status := v1alpha1.AdmissionReviewStatus{}
 	status.Allowed = allowed
 	if err != nil {
